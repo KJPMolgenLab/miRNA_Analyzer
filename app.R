@@ -7,7 +7,44 @@
 #    http://shiny.rstudio.com/
 #
 
-rm(list=ls())
+local({
+    r <- getOption("repos")
+    r["CRAN"] <- "https://cran.rstudio.com/"
+    r["BioCsoft"] <- "https://bioconductor.org/packages/release/bioc"
+    r["BioCann"] <- "https://bioconductor.org/packages/release/data/annotation"
+    r["BioCexp"] <- "https://bioconductor.org/packages/release/data/experiment"
+    options(repos = r)
+})
+
+
+packages=c(
+    "shiny",
+    "openxlsx",
+    "data.table",
+    "DT",
+    "DESeq2",
+    "tidyverse",
+    "compareGroups",
+    "ggplot2",
+    "gplots",
+    "plotly",
+    "pheatmap",
+    "viridis",
+    "RColorBrewer",
+    "grid",
+    "visNetwork",
+    "igraph",
+    "gprofiler2",
+    "miRNAtap",
+    "miRNAtap.db",
+    "foreach")
+
+for(p in packages){
+    if(!require(p, character.only = TRUE)){
+        install.packages(p, dependencies=T) 
+    }
+}
+
 
 library(shiny)
 library(openxlsx)
@@ -29,6 +66,8 @@ library(gprofiler2)
 library(miRNAtap)
 library(miRNAtap.db)
 library(foreach)
+
+
 getGOresults = function(geneset, genereference, organism = "mmusculus",
                         sources=c("GO:BP", "GO:MF", "GO:CC", "KEGG", "TF",
                                   #"MIRNA",

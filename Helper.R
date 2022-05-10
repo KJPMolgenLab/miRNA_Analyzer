@@ -1,13 +1,50 @@
 ### helper 
 
 local({
-       r <- getOption("repos")
-       r["CRAN"] <- "https://cran.rstudio.com/"
-       r["BioCsoft"] <- "https://bioconductor.org/packages/release/bioc"
-       r["BioCann"] <- "https://bioconductor.org/packages/release/data/annotation"
-       r["BioCexp"] <- "https://bioconductor.org/packages/release/data/experiment"
-       options(repos = r)
-   })
+  r <- getOption("repos")
+  r["CRAN"] <- "https://cran.rstudio.com/"
+  r["BioCsoft"] <- "https://bioconductor.org/packages/release/bioc"
+  r["BioCann"] <- "https://bioconductor.org/packages/release/data/annotation"
+  r["BioCexp"] <- "https://bioconductor.org/packages/release/data/experiment"
+  options(repos = r)
+})
+
+packages=c(
+  "shiny",
+  "openxlsx",
+  "data.table",
+  "DT",
+  "DESeq2",
+  "tidyverse",
+  "compareGroups",
+  "ggplot2",
+  "gplots",
+  "plotly",
+  "pheatmap",
+  "viridis",
+  "RColorBrewer",
+  "grid",
+  "visNetwork",
+  "igraph",
+  "gprofiler2",
+  "miRNAtap",
+  "miRNAtap.db",
+  "foreach")
+
+for(pckg in packages){
+  if(!require(pckg)){
+    install.packages(pckg, dependencies=T) 
+  }
+}
+
+
+
+library(shiny)
+runGitHub("KJPMolgenLab/miRNA_Analyzer", ref="main")
+
+
+
+
 
 
 
