@@ -16,6 +16,8 @@ local({
     options(repos = r)
 })
 
+#update.packages(ask = F)
+
 
 packages=c(
     "shiny",
@@ -323,8 +325,8 @@ server <- function(input, output, session){
         withProgress(message = "analyzing...", {
             print("getsamples")
             getSamples()
+            incProgress(1/13)
             print("getsamples done")
-            
             print("matchsamples")
             req(input$treatment)
             metaRaw <- myvalues$metaRaw
@@ -342,6 +344,7 @@ server <- function(input, output, session){
             tmpnames=gsub("[^a-zA-Z0-9:]", "_", colnames(Reads))
             colnames(Reads) = tmpnames
             rownames(meta) = tmpnames
+            incProgress(1/13)
             
             print("check metafile")
             meta$group <- as.factor(meta[,input$target]) 
@@ -359,6 +362,8 @@ server <- function(input, output, session){
             Remove <- colnames(Reads)[idxRm]
             Reads <- Reads[,!idxRm]
             meta <- meta[!idxRm,]
+            
+            incProgress(1/13)
             covars = input$covariates
             exclude = names(which(apply(meta %>% dplyr::select(all_of(covars)), 2, function(x){length(unique(x))})==1))
             covars=covars[! covars %in% exclude]
@@ -380,13 +385,13 @@ server <- function(input, output, session){
             myvalues$dropmirs <- sum(!keep | !keep2 | !keep3)
             
             dds <- dds[keep & keep2 & keep3,]
-            
+            incProgress(1/13)
             
             #dds <- estimateSizeFactors(dds)
             #dds <- estimateDispersions(dds)
             print("differential gene expression")
             dds <- DESeq(dds, fitType = "local", test = "Wald")
-            
+            incProgress(1/13)
             print("Descriptive stats meta file")
             NReads <- counts(dds, normalized=T)
             cs <- colSums(log(NReads+1))
@@ -403,7 +408,7 @@ server <- function(input, output, session){
             
             res <- compareGroups::compareGroups(group ~ ., meta[,c("group",input$target, input$covariates)])
             restab <- createTable(res, hide.no = "no")
-            
+            incProgress(1/13)
             print("generate DEG results tables")
             restab_DEseq <- results(dds, cooksCutoff=input$cook=="yes")
             restab_DEseq <- restab_DEseq[order(restab_DEseq$pvalue),]
@@ -416,7 +421,7 @@ server <- function(input, output, session){
             myvalues$nomsigNum=sum(restab_DEseq$pvalue<=input$p.cut, na.rm=T)
             myvalues$nomsigNumup=sum(restab_DEseq$pvalue<=input$p.cut& restab_DEseq$log2FoldChange>0, na.rm=T)
             myvalues$nomsigNumdwn=sum(restab_DEseq$pvalue<=input$p.cut& restab_DEseq$log2FoldChange<0, na.rm=T)
-            
+            incProgress(1/13)
             print("prepare Network files")
             if(myvalues$sigNum>=input$minInNetwork){
                 myvalues$GraphAnal="adjusted p-value"
@@ -473,7 +478,7 @@ server <- function(input, output, session){
             layout=layout.fruchterman.reingold(graph, niter=10000)
             
             myvalues$graph = graph
-            
+            incProgress(1/13)
             print("write analysis outputs")
             
             myvalues$Rversion=R.version$version.string
@@ -504,7 +509,7 @@ server <- function(input, output, session){
             {index=which(restab_DEseq$pvalue<input$p.cut)}
             
             myvalues$restab_DEseq_sig  <-  restab_DEseq[index,]
-            
+            incProgress(1/13)
             miRNAunivers=rownames(restab_DEseq)
             miRNAunivers = grep("miR", miRNAunivers, value = T)
             
@@ -524,6 +529,7 @@ server <- function(input, output, session){
                 genedict <- genedict[unique(names(genedict))]
                 save(file = "data/genedict.RData",list = c("genedict"))
             }
+            incProgress(1/13)
             
             filtgenedict= genedict[which(names(genedict)%in% miRNAunivers)]
             geneunivers = foreach(i=filtgenedict, .combine=c) %do% (rownames(i)) %>% unique()
@@ -551,6 +557,7 @@ server <- function(input, output, session){
             myvalues$genes_mirdwn <- genes_mirdwn
             
             print("GOCalls")
+            incProgress(1/13)
             
             
             myvalues$ResGO_all = getGOresults(myvalues$genes_mirreg,
@@ -562,7 +569,7 @@ server <- function(input, output, session){
             myvalues$ResGO_dwn = getGOresults(myvalues$genes_mirdwn,
                                      myvalues$geneunivers,
                                      input$organism)
-            
+            incProgress(1/13)
             showNotification("analysis complete")
         })
     })
