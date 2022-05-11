@@ -18,6 +18,8 @@ local({
 
 #update.packages(ask = F)
 
+rm(list=ls())
+gc() 
 
 packages=c(
     "shiny",
@@ -325,7 +327,7 @@ server <- function(input, output, session){
         withProgress(message = "analyzing...", {
             print("getsamples")
             getSamples()
-            incProgress(1/13)
+            incProgress(1/13, message="samples loaded, matching files")
             print("getsamples done")
             print("matchsamples")
             req(input$treatment)
@@ -337,14 +339,14 @@ server <- function(input, output, session){
             meta <- metaRaw[!is.na(metaRaw[,input$target]),]
             Samples <- intersect(colnames(Reads), rownames(meta))
             if(length(Samples)==0){
-                showNotification("Sampels between inputs files do not match (meta file must contain the same names as the Qiagen input wihtout the -READS flag)")
+                print("Sampels between inputs files do not match (meta file must contain the same names as the Qiagen input wihtout the -READS flag)")
             }
             meta <-  meta[Samples, ]
             Reads <- Reads[,Samples]
             tmpnames=gsub("[^a-zA-Z0-9:]", "_", colnames(Reads))
             colnames(Reads) = tmpnames
             rownames(meta) = tmpnames
-            incProgress(1/13)
+            incProgress(1/13, message="samples matched, checking metafile")
             
             print("check metafile")
             meta$group <- as.factor(meta[,input$target]) 
@@ -353,7 +355,7 @@ server <- function(input, output, session){
             
             idxRm <- meta$totalReads < as.numeric(input$reads.cutoff)
             if(sum(idxRm)>0.5*nrow(meta)){
-                showNotification("More than half of the samples did not meet QC criteria; 
+                print("More than half of the samples did not meet QC criteria; 
                                  all samples were thus included, please adjust the QC parameter reads cutoff")
                 idxRm <- meta$totalReads < 0
             }
@@ -363,7 +365,7 @@ server <- function(input, output, session){
             Reads <- Reads[,!idxRm]
             meta <- meta[!idxRm,]
             
-            incProgress(1/13)
+           
             covars = input$covariates
             exclude = names(which(apply(meta %>% dplyr::select(all_of(covars)), 2, function(x){length(unique(x))})==1))
             covars=covars[! covars %in% exclude]
@@ -372,7 +374,7 @@ server <- function(input, output, session){
             }else {
                 modelform=as.formula("~group")
             }
-            
+             incProgress(1/13, message="metafile checked, filtering Reads...")
             Reads=Reads[,rownames(meta)]
             
             print("QC Reads")
@@ -385,13 +387,13 @@ server <- function(input, output, session){
             myvalues$dropmirs <- sum(!keep | !keep2 | !keep3)
             
             dds <- dds[keep & keep2 & keep3,]
-            incProgress(1/13)
+            incProgress(1/13, message="Reads filtered, starting DEG analysis...")
             
             #dds <- estimateSizeFactors(dds)
             #dds <- estimateDispersions(dds)
-            print("differential gene expression")
+            print("differential gene expression analysis")
             dds <- DESeq(dds, fitType = "local", test = "Wald")
-            incProgress(1/13)
+            incProgress(1/13, message="DEG calculated, compare samples...")
             print("Descriptive stats meta file")
             NReads <- counts(dds, normalized=T)
             cs <- colSums(log(NReads+1))
@@ -408,8 +410,8 @@ server <- function(input, output, session){
             
             res <- compareGroups::compareGroups(group ~ ., meta[,c("group",input$target, input$covariates)])
             restab <- createTable(res, hide.no = "no")
-            incProgress(1/13)
-            print("generate DEG results tables")
+            incProgress(1/13, message="samples compared, collecting results...")
+            print("generate tables")
             restab_DEseq <- results(dds, cooksCutoff=input$cook=="yes")
             restab_DEseq <- restab_DEseq[order(restab_DEseq$pvalue),]
             
@@ -421,7 +423,9 @@ server <- function(input, output, session){
             myvalues$nomsigNum=sum(restab_DEseq$pvalue<=input$p.cut, na.rm=T)
             myvalues$nomsigNumup=sum(restab_DEseq$pvalue<=input$p.cut& restab_DEseq$log2FoldChange>0, na.rm=T)
             myvalues$nomsigNumdwn=sum(restab_DEseq$pvalue<=input$p.cut& restab_DEseq$log2FoldChange<0, na.rm=T)
-            incProgress(1/13)
+            
+            incProgress(1/13, message="results collected, calculating network...")
+            
             print("prepare Network files")
             if(myvalues$sigNum>=input$minInNetwork){
                 myvalues$GraphAnal="adjusted p-value"
@@ -478,8 +482,8 @@ server <- function(input, output, session){
             layout=layout.fruchterman.reingold(graph, niter=10000)
             
             myvalues$graph = graph
-            incProgress(1/13)
-            print("write analysis outputs")
+            incProgress(1/13, message="Networks calculated, collecting results...")
+            print("write analysis summary")
             
             myvalues$Rversion=R.version$version.string
             myvalues$NtotReads=round(sum(meta$totalReads)/10e5,digits = 1)
@@ -509,7 +513,7 @@ server <- function(input, output, session){
             {index=which(restab_DEseq$pvalue<input$p.cut)}
             
             myvalues$restab_DEseq_sig  <-  restab_DEseq[index,]
-            incProgress(1/13)
+            incProgress(1/13, message="results collected, starting enrichment analysis")
             miRNAunivers=rownames(restab_DEseq)
             miRNAunivers = grep("miR", miRNAunivers, value = T)
             
@@ -518,7 +522,7 @@ server <- function(input, output, session){
             recalc = miRNAunivers[! miRNAunivers %in% names(genedict)]
             
             if(length(recalc)>0){
-                print("reannotation of miRNAS")
+                showNotification("reannotation of miRNAS needed, this may take a while")
                 genedict_new=mapply(function(x){
                     targets <- getPredictedTargets(mirna = x, 
                                                    min_src = 4,
@@ -529,7 +533,8 @@ server <- function(input, output, session){
                 genedict <- genedict[unique(names(genedict))]
                 save(file = "data/genedict.RData",list = c("genedict"))
             }
-            incProgress(1/13)
+            
+            incProgress(1/13, message="miRNA-protein annotation done, prepare GO analysis")
             
             filtgenedict= genedict[which(names(genedict)%in% miRNAunivers)]
             geneunivers = foreach(i=filtgenedict, .combine=c) %do% (rownames(i)) %>% unique()
@@ -557,7 +562,7 @@ server <- function(input, output, session){
             myvalues$genes_mirdwn <- genes_mirdwn
             
             print("GOCalls")
-            incProgress(1/13)
+            incProgress(1/13, message="retrieving GO results...")
             
             
             myvalues$ResGO_all = getGOresults(myvalues$genes_mirreg,
@@ -570,7 +575,7 @@ server <- function(input, output, session){
                                      myvalues$geneunivers,
                                      input$organism)
             incProgress(1/13)
-            showNotification("analysis complete")
+            print("analysis complete")
         })
     })
     
@@ -600,7 +605,7 @@ server <- function(input, output, session){
                                                                               extensions = "Buttons",
                                                                               options = list(
                                                                                   autoWidth = TRUE,
-                                                                                  pageLength = -1,
+                                                                                  pageLength = 15,
                                                                                   info = FALSE,
                                                                                   autoWidth=T, 
                                                                                   lengthMenu = list(c(-1, 15,50, 100), 
@@ -672,15 +677,19 @@ server <- function(input, output, session){
                                           req(myvalues$dds)
                                           par(mfrow=c(2,2), mar=c(5,5,3,5))
                                           dds_data = myvalues[["dds"]]
-                                          plotDispEsts(dds_data)
-                                          plotMA(dds_data)
                                           
+                                          plotDispEsts(dds_data)
+                                          incProgress(1/4)
+                                          plotMA(dds_data)
+                                          incProgress(1/4)
                                           RawplotDat=log(myvalues$Reads+1)
-                                          NormplotDat=log(myvalues$NReads+1)
                                           boxplot(RawplotDat, col=AGCcol[1+as.numeric(myvalues$meta$group)], main="raw counts", 
                                                   ylab="log(counts+1)", las=3, cex.axis=.7)
                                           legend(xpd=2, x=ncol(RawplotDat)+1, y=max(RawplotDat, na.rm=T), legend=levels(myvalues$meta$group), col=AGCcol[2:3], 
                                                  pch=15, bty="n")
+                                          incProgress(1/4)
+                                          
+                                          NormplotDat=log(myvalues$NReads+1)
                                           
                                           boxplot(NormplotDat, col=AGCcol[1+as.numeric(myvalues$meta$group)], main="normalized counts", 
                                                   ylab="log(counts+1)", las=3, cex.axis=.7)
@@ -696,7 +705,7 @@ server <- function(input, output, session){
                 RStmp=rowSums(myvalues$NReads[colnames(myvalues$miRCo),],na.rm=T)
                 RStmp_cal=100 * (RStmp-min(RStmp, na.rm=T))/max(RStmp,RStmp, na.rm=T)
                 cc=gradient_base[floor(RStmp_cal)+1]
-                
+                incProgress(1/2)
                 heatmap.2(myvalues$miRCo, 
                           main="correlation of significant miRNAs",
                           col = viridis(100), 
@@ -725,7 +734,7 @@ server <- function(input, output, session){
                                        density.info ="n",
                                        ColSideColors = AGCcol[1+as.numeric(myvalues$meta$group)], 
                                        mar=c(8,8))
-                             
+                           incProgress(1/2)
                              legend("topright", 
                                     legend = sort(unique(myvalues$meta$group)), 
                                     pch=15, col = AGCcol[1+c(1:length(unique(myvalues$meta$group)))],
@@ -755,7 +764,7 @@ server <- function(input, output, session){
                                                    method = "euclidean"))
                              colors<-viridis(255)
                              rownames(metaplot) <- colnames(DistM)
-                             
+                             incProgress(1/2)
                              heatmap.2(as.matrix(DistM), col = viridis(100),mar=c(8,8), 
                                        main="dissimilarity all miRNAs", density.info = "none", trace = "none", 
                                        hclustfun =function(x){hclust(x,method="ward.D2")},
@@ -777,12 +786,12 @@ server <- function(input, output, session){
                          dataset = as.data.frame(myvalues$restab_DEseq)
                          #v1 <- 1:nrow(row.names(dataset)
                          #cols1 <- ifelse(v1 %in% s,'orange','')
-                         
+                         incProgress(1/2)
                          datatable(dataset, 
                                    extensions = "Buttons",
                                    options = list(
                                        autoWidth = TRUE,
-                                       pageLength = 100,
+                                       pageLength = 15,
                                        info = FALSE,
                                        autoWidth=T, 
                                        lengthMenu = list(c(-1, 15,50, 100), 
@@ -800,7 +809,7 @@ server <- function(input, output, session){
                          { s=input$table_display_fc_rows_selected
                          ResultsfinCaCo <- data.frame(myvalues$restab_DEseq)
                          par(mar=c(5,5,5,8))
-                         
+                         incProgress(1/3)
                          hline <- function(y = 0, color = "black") {
                              list(
                                  type = "line",
@@ -835,7 +844,7 @@ server <- function(input, output, session){
                                       y=-log10(input$p.cut), textposition = "top right",
                                       text = paste("nominal p", input$p.cut), 
                                       textfont  = list(color = '#000'))
-                         
+                         incProgress(1/3)
                          fig <- fig %>% layout(legend = list(x=0, y=1.1, orientation = 'h'))
                          
                          if(length(s)){
