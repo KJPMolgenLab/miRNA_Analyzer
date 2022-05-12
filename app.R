@@ -18,7 +18,7 @@ local({
 
 #update.packages(ask = F)
 
-rm(list=ls())
+#rm(list=ls())
 gc() 
 
 packages=c(
@@ -125,7 +125,7 @@ ui <- function(){
     fluidPage(
         
         # Application title
-        titlePanel("miRNA Analyzer V2.1"),
+        titlePanel("miRNA Analyzer V2.2"),
         
         # Sidebar with a slider input for number of bins 
         sidebarLayout(
@@ -159,7 +159,7 @@ ui <- function(){
                 
                 actionButton("run_now", "Run analysis"),
                 hr(),
-                h3("advanced settings"),
+                h4("advanced settings"),
                 numericInput("mincount", "QC: min Reads miRNA in at least 1 sample", 
                              min = 0, value = 10, step=1),
                 numericInput("minsamples", "QC: % Sample with miRNA detected", 
@@ -178,10 +178,11 @@ ui <- function(){
                 
                 numericInput("p.cut", "DEG: p-value threshold for significance", 
                              0,1, value = 0.05, step = 0.001),
+                numericInput("minInNetwork", "Vizualize: switches from p.adjusted to p.uncorrected if fewer miRNAs are singificant", 
+                             min=0, value=15, step=1),
                 selectInput("cook", "DEG: only display trustworthy p-values (cooksDistance corrected)", 
                              choices=c("yes", "no"), selected="no"),
-                numericInput("minInNetwork", "Network: min Number of Cluster size", 
-                             min=10, value=50, step=1),
+                
                 numericInput("cor.cut", "Network: Minimum correlation value between to miRNAs", 0,1, value=0.8, step = 0.01), 
                 
             ),
@@ -269,14 +270,25 @@ server <- function(input, output, session){
         Remove=NULL, 
         restab_DEseq=NULL)
     
-    getSamples <- reactive({
+    observe({
+        inFileReads <- input$Readsfile
+        req(inFileReads)
+        tryCatch(ReadsRaw <-read.xlsx(inFileReads$datapath, sheet = "miRNA_piRNA"), 
+                 warning = function(w) {
+                   showNotification('there was a warning','',type = "error")
+                   return()
+                 }, error = function(e) {
+                   showNotification(paste('there was an error reading the summary file:', e$message),'',type = "error")
+                   return()
+                 }, silent=TRUE)
+        
+        req(ReadsRaw)
+        
         inFile <- input$Samplefile
         req(inFile)
         metaRaw <-read.xlsx(inFile$datapath)
+        req(metaRaw)
         
-        inFile <- input$Readsfile
-        req(inFile)
-        ReadsRaw <-read.xlsx(inFile$datapath, sheet="miRNA_piRNA")
         
         ReadsRaw <- remove_rownames(ReadsRaw)
         ReadsRaw <- column_to_rownames(ReadsRaw, "miRNA")
@@ -302,7 +314,7 @@ server <- function(input, output, session){
                           choices = vars)
         
     })
-    observeEvent(getSamples(),{
+    observe({
         update_cols()
     })
     
@@ -318,7 +330,6 @@ server <- function(input, output, session){
     })
     
     observe({
-        
         myvalues$treatment = input$treatment
         cat("treatment: ", myvalues$treatment, "\n")
     })
@@ -326,20 +337,20 @@ server <- function(input, output, session){
     observeEvent(input$run_now, {
         withProgress(message = "analyzing...", {
             print("getsamples")
-            getSamples()
             incProgress(1/13, message="samples loaded, matching files")
             print("getsamples done")
             print("matchsamples")
-            req(input$treatment)
+            req(myvalues$treatment)
+            req(input$target)
             metaRaw <- myvalues$metaRaw
-            Reads <- myvalues$ReadsRaw
+            ReadsRaw <- myvalues$ReadsRaw
             metaRaw <- remove_rownames(metaRaw)
             metaRaw <- column_to_rownames(metaRaw, input$sampleID)
             req(myvalues$treatment)
             meta <- metaRaw[!is.na(metaRaw[,input$target]),]
             Samples <- intersect(colnames(Reads), rownames(meta))
             if(length(Samples)==0){
-                print("Sampels between inputs files do not match (meta file must contain the same names as the Qiagen input wihtout the -READS flag)")
+                showNotification("Sampels between inputs files do not match (meta file must contain the same names as the Qiagen input wihtout the -READS flag)", duration = NULL, closeButton = T, , type="error")
             }
             meta <-  meta[Samples, ]
             Reads <- Reads[,Samples]
@@ -355,8 +366,9 @@ server <- function(input, output, session){
             
             idxRm <- meta$totalReads < as.numeric(input$reads.cutoff)
             if(sum(idxRm)>0.5*nrow(meta)){
-                print("More than half of the samples did not meet QC criteria; 
-                                 all samples were thus included, please adjust the QC parameter reads cutoff")
+                showNotification("More than half of the samples did not meet QC criteria; 
+                                 all samples were thus included, please check quality of the summary file and/or adjust the QC parameter reads cutoff", 
+                                 duration= NULL, closeButton = T, type="warning")
                 idxRm <- meta$totalReads < 0
             }
             
@@ -365,7 +377,6 @@ server <- function(input, output, session){
             Reads <- Reads[,!idxRm]
             meta <- meta[!idxRm,]
             
-           
             covars = input$covariates
             exclude = names(which(apply(meta %>% dplyr::select(all_of(covars)), 2, function(x){length(unique(x))})==1))
             covars=covars[! covars %in% exclude]
@@ -374,15 +385,15 @@ server <- function(input, output, session){
             }else {
                 modelform=as.formula("~group")
             }
-             incProgress(1/13, message="metafile checked, filtering Reads...")
+            incProgress(1/13, message="metafile checked, filtering Reads...")
             Reads=Reads[,rownames(meta)]
             
             print("QC Reads")
             dds <- DESeqDataSetFromMatrix(Reads, colData = meta, design = modelform)
             
-            keep <- rowSums(counts(dds)) >= input$mincount
-            keep2 <- rowSums(counts(dds)> input$mincount) > input$minsamples*nrow(meta)
-            keep3 <- apply(counts(dds), 1, sd)>input$sdcutoff
+            keep <- rowSums(counts(dds)) >= as.numeric(input$mincount)
+            keep2 <- rowSums(counts(dds)>= as.numeric(input$mincount)) > as.numeric(input$minsamples)*nrow(meta)
+            keep3 <- apply(counts(dds), 1, sd)>as.numeric(input$sdcutoff)
             
             myvalues$dropmirs <- sum(!keep | !keep2 | !keep3)
             
@@ -432,56 +443,68 @@ server <- function(input, output, session){
                 myvalues$targetmirs=rownames(restab_DEseq)[which(restab_DEseq$padj<=input$p.cut)]
             } else {
                 myvalues$GraphAnal="nominal p-value"
-                myvalues$targetmirs=rownames(restab_DEseq)[which(restab_DEseq$pvalue<=input$p.cut)]}
+                myvalues$targetmirs=rownames(restab_DEseq)[which(restab_DEseq$pvalue<=input$p.cut)]
+                showNotification(paste0("less then ", input$minInNetwork, " miRNAs where significant after adjustment for multiple correction. 
+                                        switching to uncorrected level of significance. Set the Viz parameter to 0 if you want to include adjusted p-values only"), 
+                                 duration = NULL, closeButton = T, type="warning")}
+            
             
             
             ## graph networks 
-            myvalues$miRCo=cor(t(NReads[myvalues$targetmirs,]), method = "s")
+            if(length(myvalues$targetmirs)>1){
+              myvalues$miRCo=cor(t(NReads[myvalues$targetmirs,]), method = "s")
+              
+              CorMAT = myvalues$miRCo
+              
+              resSig = restab_DEseq[myvalues$targetmirs,]
+              
+              CorMAT[ (CorMAT) < input$cor.cut] <- 0
+              diag(CorMAT) <- 0
+              print("calculate networks")
+              graph <- graph.adjacency(CorMAT, weighted=TRUE, mode="lower")
+              
+              
+              CEB=cluster_fast_greedy(graph) 
+              
+              rbPal <- colorRampPalette(c("red","green"))
+              
+              FCsig=resSig$log2FoldChange
+              FCsig[is.infinite(FCsig)]=NA
+              
+              if(length(unique(meta$group))==2){
+                  LFCbnd=max(abs((FCsig)), na.rm=T)
+                  LFCsym=c(-LFCbnd, LFCbnd, FCsig)
+                  cols=rbPal(11)[as.numeric(cut(LFCsym, breaks=11))]
+                  cols=cols[-(1:2)]
+                  V(graph)$color=cols
+                  labsub="green=up-regulated, red=down-regulated"} else {
+                      V(graph)$color=AGCcol[membership(CEB)]
+                      labsub="colors = membership"
+                  }
+              
+              minmaxscale <- function(x){(x-min(x, na.rm=T))/(max(x, na.rm=T)-min(x, na.rm=T))}
+              V(graph)$size=3+minmaxscale(-log10(resSig$pvalue))*3
+              
+              
+              plab=formatC(resSig$padj,format = "e", digits = 1)
+              plab[resSig$padj>0.1]=""
+              mirname=V(graph)$name
+              V(graph)$name= paste(plab, "\n",V(graph)$name) 
+              V(graph)$size=V(graph)$size
+              
+              V(graph)$label.cex=1
+              V(graph)$label.color=AGCcol[membership(CEB)]
+              V(graph)$label.dist=2
+              
+              E(graph)$width=(E(graph)$weight^5)*10
+              
+              layout=layout.fruchterman.reingold(graph, niter=10000)
+              
+              myvalues$graph = graph
+            } else {
+              myvalues$graph = make_empty_graph()
+            }
             
-            CorMAT = myvalues$miRCo
-            
-            resSig = restab_DEseq[myvalues$targetmirs,]
-            
-            CorMAT[ (CorMAT) < input$cor.cut] <- 0
-            diag(CorMAT) <- 0
-            print("calculate networks")
-            graph <- graph.adjacency(CorMAT, weighted=TRUE, mode="lower")
-            
-            
-            CEB=cluster_fast_greedy(graph) 
-            
-            rbPal <- colorRampPalette(c("red","green"))
-            
-            FCsig=resSig$log2FoldChange
-            FCsig[is.infinite(FCsig)]=NA
-            
-            if(length(unique(meta$group))==2){
-                LFCbnd=max(abs((FCsig)), na.rm=T)
-                LFCsym=c(-LFCbnd, LFCbnd, FCsig)
-                cols=rbPal(11)[as.numeric(cut(LFCsym, breaks=11))]
-                cols=cols[-(1:2)]
-                V(graph)$color=cols
-                labsub="green=up-regulated, red=down-regulated"} else {
-                    V(graph)$color=AGCcol[membership(CEB)]
-                    labsub="colors = membership"
-                }
-            
-            V(graph)$size=-log10(resSig$pvalue)
-            plab=formatC(resSig$padj,format = "e", digits = 1)
-            plab[resSig$padj>0.1]=""
-            mirname=V(graph)$name
-            V(graph)$name= paste(plab, "\n",V(graph)$name) 
-            V(graph)$size=V(graph)$size
-            
-            V(graph)$label.cex=1
-            V(graph)$label.color=AGCcol[membership(CEB)]
-            V(graph)$label.dist=2
-            
-            E(graph)$width=(E(graph)$weight^5)*10
-            
-            layout=layout.fruchterman.reingold(graph, niter=10000)
-            
-            myvalues$graph = graph
             incProgress(1/13, message="Networks calculated, collecting results...")
             print("write analysis summary")
             
@@ -509,8 +532,8 @@ server <- function(input, output, session){
             
             if(myvalues$GraphAnal =="adjusted p-value"){
                 index=which(restab_DEseq$padj<input$p.cut)
-            } else 
-            {index=which(restab_DEseq$pvalue<input$p.cut)}
+            } else {
+            index=which(restab_DEseq$pvalue<input$p.cut)}
             
             myvalues$restab_DEseq_sig  <-  restab_DEseq[index,]
             incProgress(1/13, message="results collected, starting enrichment analysis")
@@ -564,16 +587,18 @@ server <- function(input, output, session){
             print("GOCalls")
             incProgress(1/13, message="retrieving GO results...")
             
-            
-            myvalues$ResGO_all = getGOresults(myvalues$genes_mirreg,
+            if(length(myvalues$genes_mirreg)>0){
+              myvalues$ResGO_all = getGOresults(myvalues$genes_mirreg,
+                                                myvalues$geneunivers,
+                                                input$organism)} else {myvalues$ResGO_all=NULL}
+            if(length(myvalues$genes_mirreg)>0){
+              myvalues$ResGO_up = getGOresults(myvalues$genes_mirup,
+                                             myvalues$geneunivers,
+                                             input$organism)} else {myvalues$ResGO_up=NULL}
+            if(length(myvalues$genes_mirreg)>0){
+              myvalues$ResGO_dwn = getGOresults(myvalues$genes_mirdwn,
                                      myvalues$geneunivers,
-                                     input$organism)
-            myvalues$ResGO_up = getGOresults(myvalues$genes_mirup,
-                                    myvalues$geneunivers,
-                                    input$organism)
-            myvalues$ResGO_dwn = getGOresults(myvalues$genes_mirdwn,
-                                     myvalues$geneunivers,
-                                     input$organism)
+                                     input$organism)} else {myvalues$ResGO_dwn=NULL}
             incProgress(1/13)
             print("analysis complete")
         })
@@ -746,11 +771,34 @@ server <- function(input, output, session){
         output$DEG_Corr_hist <- renderPlot(
             withProgress(message = "generating ...", 
                          hist(myvalues$miRCo, col=AGCcol[4], border = "#444545", 
-                              main="corr between significant miRNAs")))
+                              main="corr between significant miRNAs")
+                         ))
         print("Networkplot")
         output$Network <- renderVisNetwork(
-            withProgress(message = "generating ...", 
-                         visIgraph(myvalues$graph)))
+            withProgress(message = "generating ...", {
+              g=myvalues$graph
+              if(length(V(g))>1){
+
+                         V(g)$title= V(g)$name
+                         
+                         toVisNetworkData(g, idToLabel = F) %>%  
+                           c(list(main=list(text=paste("Network of small RNAs with",
+                                               myvalues$GraphAnal, "< ", 
+                                               input$p.cut), 
+                                            style="font-family:sans-serif;font-weight:bold;font-size:20px;text-align:center;"), randomSeed = 42)) %>%
+                           do.call(visNetwork, .)
+              } else {
+                #generates a random network
+                nodes <- data.frame(id = 1:3)
+                edges <- data.frame(from = c(1,2), to = c(1,3))
+                visNetwork(nodes, edges, main=list(text="less than 2 significant hits", 
+                                                   style="font-family:sans-serif;font-weight:bold;font-size:20px;text-align:center;")) %>% 
+                  visNodes(hidden = T)
+                
+              }
+                
+                         }
+            ))
         
         print("heatmap_samples")
         output$heatmap_samples <- renderPlot(
@@ -880,7 +928,10 @@ server <- function(input, output, session){
                                  ggplot(plotdata, aes(x=Target, y=log2(Nreads+1), fill=Target)) +
                                      geom_boxplot() + facet_wrap(~miRNA, scales="free") + theme_bw()
                                  }else{
-                                 empty_plot()
+                                   ggplot() +
+                                     theme_void() +
+                                     geom_text(aes(0,0,label='click table for visualization')) +
+                                     xlab(NULL)
                              }
                              
                          }
@@ -986,7 +1037,6 @@ server <- function(input, output, session){
         
     })
 }
-
 
 # Run the application 
 shinyApp(ui = ui, server = server)

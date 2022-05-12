@@ -11,27 +11,29 @@ runGitHub("KJPMolgenLab/miRNA_Analyzer", ref="main")
 
 
 input=c()
-#input$Readsfile="C:/Users/andreas_chiocchetti/OneDrive/Documents/Frankfurt Uni/Kooperationen/schubert/Sputum20220510/20202804 8Proben 107316.all_samples.summary (1).xlsx"
-#input$Samplefile = "C:/Users/andreas_chiocchetti/OneDrive/Documents/Frankfurt Uni/Kooperationen/schubert/Sputum20220510/Metadata_BO Sputum FFM.xlsx"
+input$Readsfile="C:/Users/andreas_chiocchetti/OneDrive/Documents/Frankfurt Uni/Kooperationen/Bär/Data20220511/AC_Baer_Summary.xlsx"
+input$Samplefile = "C:/Users/andreas_chiocchetti/OneDrive/Documents/Frankfurt Uni/Kooperationen/Bär/Data20220511/AC_Baer_Meta_all.xlsx"
 input$submit = TRUE
 input$sampleID =   "SampleID"
 input$target = "Target"
 input$treatment = "PIBO"
 input$covariates = NULL
-input$reads.cutoff = 0
+input$reads.cutoff = 10e5
 input$p.cut = 0.05
 input$cor.cut = 0.8
 input$run_now = T
-input$mincount = 10
-input$minInNetwork = 50
+input$mincount = 0
+input$minInNetwork = 15
 input$organism="hsapiens"
-
+input$minsamples = 0
+input$sdcutoff=3
+input$cook="no"
 
 metaRaw <-read.xlsx(input$Samplefile, sheet=1)
 ReadsRaw <-read.xlsx(input$Readsfile, sheet="miRNA_piRNA")
 
 myvalues=c()
-
+myvalues$treatment="Hypox"
 
 getlog2FC=function(datavector, groupfactor){
   sums = tapply(datavector, groupfactor, sum, na.rm=T)
