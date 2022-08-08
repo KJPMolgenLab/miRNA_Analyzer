@@ -5,10 +5,10 @@ account: molgenlab
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 5867974
-bundleId: 5899268
+bundleId: 6179731
 url: https://molgenlab.shinyapps.io/miRNA_Auswertung/
-when: 1652366391.01813
-lastSyncTime: 1652366391.01814
+when: 1659968259.85193
+lastSyncTime: 1659968259.85196
 asMultiple: FALSE
 asStatic: FALSE
 ignoredFiles: Helper.R|tmp.pdf
