@@ -296,10 +296,10 @@ ui <- function(){
                            fluidRow("", column(12, htmlOutput("covariate")))),
                   tabPanel("Reads Table", 
                            DT::dataTableOutput("table_display_reads")),
+                  tabPanel("Normalized Reads Table", 
+                           DT::dataTableOutput("table_display_reads_norm")),
                   tabPanel("QC: Plots",
                            plotOutput("dds_plot"))
-                  
-                  
                 )
       )
     )
@@ -719,7 +719,7 @@ server <- function(input, output, session){
   
   
   observe({
-    req(myvalues$meta, myvalues$Reads, myvalues$dds, myvalues$graph)
+    req(myvalues$meta, myvalues$Reads, myvalues$NReads,myvalues$dds, myvalues$graph)
     print("table_display_samples")
     output$table_display_samples <- renderDataTable(withProgress(message = "generating ...", 
                                                                  {
@@ -743,6 +743,24 @@ server <- function(input, output, session){
     output$table_display_reads <- renderDataTable(withProgress(message = "generating ...", 
                                                                {
                                                                  datatable(myvalues$Reads, 
+                                                                          extensions = "Buttons",
+                                                                          filter = "top",
+                                                                          options = list(
+                                                                            autoWidth = TRUE,
+                                                                            pageLength = 15,
+                                                                            info = FALSE,
+                                                                            autoWidth=T, 
+                                                                            lengthMenu = list(c(-1, 15,50, 100), 
+                                                                                              c("All", "15","50", "100" )
+                                                                            ),dom = 'Blfrtip',
+                                                                            buttons = c('copy', 'csv', 'excel', 'pdf')
+                                                                          ) 
+                                                               )
+                                                               }))
+    
+    output$table_display_reads_norm <- renderDataTable(withProgress(message = "generating ...", 
+                                                               {
+                                                                 datatable(myvalues$NReads, 
                                                                           extensions = "Buttons",
                                                                           filter = "top",
                                                                           options = list(
